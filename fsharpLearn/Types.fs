@@ -1,21 +1,27 @@
 ﻿module fsharpLearn.Types
 
-type OperatorBase = 
+type OperatorType = 
     | Plus
     | Minus
     | Multiply
     | Divide
 
-type NotCompletelyParsedToken = 
-    | GroupStart
-    | GroupEnd
-
 type Token = 
-    | Number of value : int * token : string
-    | Variable of value : string * token : string
-    | Operator of value : OperatorBase * token : string
-    | MissingParsing of NotCompletelyParsedToken * token : string
-    | Unrecognized of token : string
-    member x.getExpression() : string = 
+    | NumberToken of value : int * token : string
+    | VariableToken of value : string * token : string
+    | OperatorToken of value : OperatorType * token : string
+    | GroupStartToken of token : string
+    | GroupEndToken of token : string
+    | SpaceToken of token : string
+    | UnrecognizedToken of token : string
+    member x.getExpression() = 
         match x with
-        | Number(_, t) | Variable(_, t) | Operator(_, t) | MissingParsing(_, t) | Unrecognized(t) -> "\r\n" + t
+        | NumberToken(_, t) | VariableToken(_, t) | OperatorToken(_, t) | GroupStartToken(t) | GroupEndToken(t) | UnrecognizedToken t | SpaceToken t -> 
+            "\r\n" + t
+
+type Expression = 
+    | Number of int
+    | Variable of string
+    | Operator of Expression * Expression * OperatorType
+    | Group of Expression list
+    | NotYetParsed of Token
