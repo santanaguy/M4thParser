@@ -59,11 +59,10 @@ let buildExpressions tokens =
             | VariableToken(v, _) -> 
                 updateAndMoveNext exps (Variable(v)) tail
             | GroupStartToken(_) -> 
-                let updated = exps @ [Group(tail |> build List.empty)]
                 let isPartOfGroup e = match e with | GroupEndToken(_) -> false | _ -> true
                 let tailWithoutTokensFromGroup = tail |> List.skipWhile isPartOfGroup |> List.tail
                 
-                tailWithoutTokensFromGroup |> build updated
+                updateAndMoveNext exps (Group(tail |> build List.empty)) tailWithoutTokensFromGroup
             | GroupEndToken(_) -> exps
             | OperatorToken(_, _) | SpaceToken(_) | UnrecognizedToken(_) | DecimalSeparatorToken -> 
                 updateAndMoveNext exps (NotYetParsed(x)) tail
