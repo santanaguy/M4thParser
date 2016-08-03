@@ -4,4 +4,3 @@
 #r "System.dll"
 #r "System.Numerics.dll"
 #r "System.Xml.Linq.dll"
-#r "../../packages/Select.Pdf.16.2.0.0/lib/net40/Select.Pdf.dll"

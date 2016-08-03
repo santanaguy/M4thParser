@@ -21,9 +21,8 @@ let parseToken token =
     | "/" -> OperatorToken(Divide, token)
     | "(" -> GroupStartToken "("
     | ")" -> GroupEndToken ")"
-    | " " -> SpaceToken(" ")
     | "." -> DecimalSeparatorToken
-    | "x" -> VariableToken(value = token, token = token)
+    | "x" | "y" -> VariableToken(value = token, token = token)
     | x -> UnrecognizedToken(x)
 
 let parseTokens tokens = 
@@ -48,6 +47,25 @@ let joinDecimals tokens =
         | _, _, _ -> tokens @ [ currentToken ]
     tokens |> List.fold foldDecimals List.empty
 
+let getTokensFromGroup tokens  =
+    let rec getTokens depth tokens xs =
+        match xs with
+        | [] -> tokens
+        | x :: tail -> 
+            match x with
+                | GroupEndToken(_) -> 
+                    let updated = tokens @ [ x ]
+                    if depth > 1 then 
+                        tail |> getTokens (depth - 1) updated
+                    else 
+                        updated
+                | GroupStartToken(_) -> 
+                        tail |> getTokens (depth + 1) (tokens @ [ x ]) 
+                | _ -> 
+                        tail |> getTokens depth (tokens @ [ x ]) 
+        
+    tokens |> getTokens 1 List.empty
+
 let buildExpressions tokens = 
     let rec build exps xs = 
         match xs with
@@ -59,34 +77,36 @@ let buildExpressions tokens =
             | VariableToken(v, _) -> 
                 updateAndMoveNext exps (Variable(v)) tail
             | GroupStartToken(_) -> 
-                let isPartOfGroup e = match e with | GroupEndToken(_) -> false | _ -> true
-                let tailWithoutTokensFromGroup = tail |> List.skipWhile isPartOfGroup |> List.tail
-                
-                updateAndMoveNext exps (Group(tail |> build List.empty)) tailWithoutTokensFromGroup
+                let tokensFromGroup = tail |> getTokensFromGroup
+                let newGroupContent = tokensFromGroup |> build List.empty 
+                let newGroup = Group(newGroupContent)
+                let tailWithoutTokensFromGroup = tail |> List.skip tokensFromGroup.Length
+                updateAndMoveNext exps newGroup tailWithoutTokensFromGroup
             | GroupEndToken(_) -> exps
-            | OperatorToken(_, _) | SpaceToken(_) | UnrecognizedToken(_) | DecimalSeparatorToken -> 
+            | OperatorToken(_, _) | UnrecognizedToken(_) | DecimalSeparatorToken -> 
                 updateAndMoveNext exps (NotYetParsed(x)) tail
 
-    and updateAndMoveNext exps newExp tail= 
-        let updated = exps @ [ newExp ]
-        (tail |> build updated)
+    and updateAndMoveNext exps newExp tail = 
+        tail |> build (exps @ [ newExp ])
 
-    build List.empty tokens
+    build List.empty tokens 
 
-let inferMultiplications expressions=
-    let folder acc current = 
-        match acc |> List.tryLast, current with
-        | Some(Number(_)), Variable(_) -> 
-            acc @ [ NotYetParsed(OperatorToken(Multiply, "*")); current]
-        | Some(Group(_)), Variable(_) -> 
-            acc @ [ NotYetParsed(OperatorToken(Multiply, "*")); current]
-        | Some(Group(_)), Group(_) -> 
-            acc @ [ NotYetParsed(OperatorToken(Multiply, "*")); current]
-        | _, _ ->
+let inferMultiplications tokens =
+    let fold acc current = 
+        match acc |> List.tryLast, current  with
+        | Some(NumberToken(_)),VariableToken(_)
+        | Some(NumberToken(_)),GroupStartToken(_)
+        | Some(VariableToken(_)), NumberToken(_)
+        | Some(VariableToken(_)), VariableToken(_)
+        | Some(VariableToken(_)), GroupStartToken(_) 
+        | Some(GroupEndToken(_)), NumberToken(_) 
+        | Some(GroupEndToken(_)), VariableToken(_)
+        | Some(GroupEndToken(_)), GroupStartToken(_)->
+            acc @ [ OperatorToken(Multiply, "*"); current]
+        | _, _->
             acc @ [current]
-
-    expressions |> List.fold folder List.empty
-
+    tokens |> List.fold fold List.empty
+                            
 let inferMissingZeroes expressions = 
     let rec infer exps xs =
         match xs with
@@ -99,29 +119,24 @@ let inferMissingZeroes expressions =
                             let updated = exps @ [Number(0m); x]
                             tail |> infer updated
                         | _, Group(inner) -> 
-                            exps @ [Group(inner |> infer List.empty)]
+                            let updated = exps @ [Group(inner |> infer List.empty)]
+                            tail |> infer updated
                         | _ -> 
                             tail |> infer (exps @ [x])
-
     
     expressions |> infer List.empty
-//    let rec folder acc current = 
-//        match acc |> List.tryLast, current with
-//        | None, _ -> acc @ [current]
-//        | Some(NotYetParsed(OperatorToken(_))), NotYetParsed(OperatorToken(_)) -> acc @ [Number(0m); current]
-//        | Some(Group(_)), _ -> acc @ [ |> List.fold folder acc]
-//
-//    expressions |> List.fold folder List.empty
 
-//let buildOperators expressions = 
-//    let folder acc current = 
-//        match acc |> List.tryLast, current with
-//        | None, _ -> acc @ [current]
-//        | Some(Number(_) as n), NotYetParsed(OperatorToken(op, _)) -> acc @ [Operator(n, TempPlaceholder, op)]
-//        | Some(Variable(_) as v), NotYetParsed(OperatorToken(op, _)) -> acc @ [Operator(v, TempPlaceholder, op)]
-//        | Some(Group(_) as v), NotYetParsed(OperatorToken(op, _)) -> acc @ [Operator(v, TempPlaceholder, op)]
-//        
-//        | Some(Operator(_,r, op1)), NotYetParsed(OperatorToken(op, _)) -> acc @ [Operator(v, TempPlaceholder, op)]
-//        | Some(NotYetParsed(OperatorToken(_))), _ -> acc @ [current]
-//
-//    expressions |> List.fold folder List.empty
+let parseOperators opType expressions= 
+    let rec infer opType exps xs =
+        match xs with
+        | [] -> exps
+        | x :: tail -> match x, tail |> List.tryHead, tail |> List.tryItem 1 with
+                        | exp1, Some (NotYetParsed(OperatorToken(t, _))), Some exp2 when t = opType->
+                            let op = Operator(exp1, opType, exp2)
+                            let next = tail |> List.skip 2 |> (@) [op] 
+                            next |> infer opType exps
+                        | _,_,_ -> 
+                            tail |> infer opType (exps @ [x])
+                        
+
+    expressions |> infer opType List.empty

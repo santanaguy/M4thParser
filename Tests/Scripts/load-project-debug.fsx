@@ -2,4 +2,4 @@
 #I __SOURCE_DIRECTORY__
 #load "load-references-debug.fsx"
 #load "../AssemblyInfo.fs"
-      "../Library1.fs"
+      "../Tests.fs"

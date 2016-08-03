@@ -1,4 +1,4 @@
-// Warning: generated file; your changes could be lost when a new file is generated.
+﻿// Warning: generated file; your changes could be lost when a new file is generated.
 #I __SOURCE_DIRECTORY__
 #r "System.Core.dll"
 #r "System.dll"
@@ -12,3 +12,9 @@
 #r "../../packages/NUnit3TestAdapter.3.4.0/lib/nunit.engine.api.dll"
 #r "../../packages/NUnit3TestAdapter.3.4.0/lib/nunit.engine.dll"
 #r "../../packages/NUnit3TestAdapter.3.4.0/lib/NUnit3.TestAdapter.dll"
+
+// Warning: generated file; your changes could be lost when a new file is generated.
+#I __SOURCE_DIRECTORY__
+#load "load-references-debug.fsx"
+#load "../AssemblyInfo.fs"
+      "../Tests.fs"
