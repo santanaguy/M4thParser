@@ -4,3 +4,6 @@
 #r "System.dll"
 #r "System.Numerics.dll"
 #r "System.Xml.Linq.dll"
+#r "../../../../../../../../Program Files (x86)/Reference Assemblies/Microsoft/FSharp/.NETFramework/v4.0/4.3.0.0/Type Providers/FSharp.Data.TypeProviders.dll"
+#r "System.Data.dll"
+#r "System.Data.Linq.dll"

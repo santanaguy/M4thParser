@@ -7,16 +7,18 @@ open fsharpLearn.Types
 open FsUnit
 open System
 
-let plusT = OperatorToken(Plus,"+")
-let plusNotParsed = NotYetParsed(plusT)
-let plus exp1 exp2 = Operator(exp1, Plus, exp2)
-let minusT = OperatorToken(Minus,"-")
-let minusNotParsed = NotYetParsed(minusT)
-let timesT = OperatorToken(Multiply,"*")
-let timesNotParsed = NotYetParsed(timesT)
-let times exp1 exp2 = Operator(exp1, Multiply, exp2)
-let dividedByT = OperatorToken(Divide,"/")
-let dividedByNotParsed = NotYetParsed(dividedByT)
+let plusT = OpToken(Plus,"+")
+let plusNotParsed = Operator(Plus)
+let plus exp1 exp2 = Operation(exp1, Plus, exp2)
+let minusT = OpToken(Minus,"-")
+let minusNotParsed = Operator(Minus)
+let minus exp1 exp2 = Operation(exp1, Minus, exp2)
+let timesT = OpToken(Multiply,"*")
+let timesNotParsed = Operator(Multiply)
+let times exp1 exp2 = Operation(exp1, Multiply, exp2)
+let dividedByT = OpToken(Divide,"/")
+let dividedByNotParsed = Operator(Divide)
+let divide exp1 exp2 = Operation(exp1, Divide, exp2)
 let oneT = NumberToken(1m, "1")
 let endGroupT = GroupEndToken(")")
 let startGroupT = GroupStartToken("(")
@@ -87,15 +89,38 @@ let ``InferMultiplications infers correctly inside groups``()=
 
 [<Test>]
 let ``parseOperators parses correctly simple``() =
-    let test = parseInput "1+1" |> parseOperators Plus
-    test |> should equal [plus one one]
+    let test = parseInput "1+1" |> parseOperators 
+    test |> should equal (plus one one)
 
 [<Test>]
 let ``parseOperators parses correctly chain``() =
-    let test = parseInput "1+1+1" |> parseOperators Plus
-    test |> should equal [plus (plus one one) (one)]
+    let test = parseInput "1+1+1" |> parseOperators 
+    test |> should equal (plus (plus one one) (one))
 
 [<Test>]
-let ``parseOperators parses correctly precence simple``() =
-    let test = parseInput "1+0*1+2" |> parseOperators Multiply |> parseOperators Plus
-    test |> should equal [plus (plus (one) (times zero one)) two]
+let ``parseOperators parses correctly precedence simple``() =
+    let test = parseInput "1+0*1+2" |> parseOperators
+    test |> should equal (plus (plus (one) (times zero one)) two)
+
+[<Test>]
+let ``parseOperators respects order when priority is the same``() =
+    let test = parseInput "1+0-1+2" |> parseOperators
+    test |> should equal (plus (minus (plus one zero) (one)) two)
+
+[<Test>]
+let ``parseOperators respects priority``() =
+    let test = parseInput "1+0*1/2-0" |> parseOperators 
+    test |> should equal (minus (plus one (divide (times zero one) two)) zero)
+
+[<Test>]
+let ``parseOperators respects groups simple``() =
+    let test = parseInput "1(1+0)" |> parseOperators
+    test |> should equal (times one (Group [plus one zero]))
+
+    let test2 = parseInput "(1+2)-2" |> parseOperators
+    test2 |> should equal (minus (Group[plus one two]) two)
+
+[<Test>]
+let ``parseOperators respects groups nested``() =
+    let test = parseInput "1((1+x) * (0+y))" |> parseOperators
+    test |> should equal (times one (Group[(times (Group[plus one xVariable]) (Group[plus zero yVariable]))]))

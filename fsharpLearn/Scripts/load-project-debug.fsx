@@ -2,6 +2,7 @@
 #I __SOURCE_DIRECTORY__
 #load "load-references-debug.fsx"
 #load "../AssemblyInfo.fs"
+      "script.fs"
       "../Types.fs"
       "../Parser.fs"
       "../Program.fs"

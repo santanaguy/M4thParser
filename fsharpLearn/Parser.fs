@@ -15,10 +15,10 @@ let removeLast = removeLastN 1
 let parseToken token = 
     match token with
     | d when Regex.IsMatch(token, "^\d+(\.\d{1,2})?$") -> NumberToken(value = Decimal.Parse(d), token = token)
-    | "+" -> OperatorToken(Plus, token)
-    | "-" -> OperatorToken(Minus, token)
-    | "*" -> OperatorToken(Multiply, token)
-    | "/" -> OperatorToken(Divide, token)
+    | "+" -> OpToken(Plus, token)
+    | "-" -> OpToken(Minus, token)
+    | "*" -> OpToken(Multiply, token)
+    | "/" -> OpToken(Divide, token)
     | "(" -> GroupStartToken "("
     | ")" -> GroupEndToken ")"
     | "." -> DecimalSeparatorToken
@@ -83,8 +83,9 @@ let buildExpressions tokens =
                 let tailWithoutTokensFromGroup = tail |> List.skip tokensFromGroup.Length
                 updateAndMoveNext exps newGroup tailWithoutTokensFromGroup
             | GroupEndToken(_) -> exps
-            | OperatorToken(_, _) | UnrecognizedToken(_) | DecimalSeparatorToken -> 
-                updateAndMoveNext exps (NotYetParsed(x)) tail
+            | OpToken(t,_) -> updateAndMoveNext exps (Operator(t)) tail
+            | UnrecognizedToken(_) | DecimalSeparatorToken -> 
+                updateAndMoveNext exps (Unparsed(x)) tail
 
     and updateAndMoveNext exps newExp tail = 
         tail |> build (exps @ [ newExp ])
@@ -102,7 +103,7 @@ let inferMultiplications tokens =
         | Some(GroupEndToken(_)), NumberToken(_) 
         | Some(GroupEndToken(_)), VariableToken(_)
         | Some(GroupEndToken(_)), GroupStartToken(_)->
-            acc @ [ OperatorToken(Multiply, "*"); current]
+            acc @ [ OpToken(Multiply, "*"); current]
         | _, _->
             acc @ [current]
     tokens |> List.fold fold List.empty
@@ -112,10 +113,10 @@ let inferMissingZeroes expressions =
         match xs with
         | [] -> exps
         | x :: tail -> match exps |> List.tryLast, x with
-                        | None, NotYetParsed(OperatorToken(_)) -> 
+                        | None, Operator(_) -> 
                             let updated = exps @ [Number(0m); x]
                             tail |> infer updated
-                        | Some(NotYetParsed(OperatorToken(_))), NotYetParsed(OperatorToken(_)) -> 
+                        | Some(Operator(_)), Operator(_) -> 
                             let updated = exps @ [Number(0m); x]
                             tail |> infer updated
                         | _, Group(inner) -> 
@@ -126,17 +127,25 @@ let inferMissingZeroes expressions =
     
     expressions |> infer List.empty
 
-let parseOperators opType expressions= 
-    let rec infer opType exps xs =
+let parseOperators expressions= 
+    let rec inferOperators opTypes exps xs =
         match xs with
         | [] -> exps
-        | x :: tail -> match x, tail |> List.tryHead, tail |> List.tryItem 1 with
-                        | exp1, Some (NotYetParsed(OperatorToken(t, _))), Some exp2 when t = opType->
-                            let op = Operator(exp1, opType, exp2)
-                            let next = tail |> List.skip 2 |> (@) [op] 
-                            next |> infer opType exps
-                        | _,_,_ -> 
-                            tail |> infer opType (exps @ [x])
-                        
+        | current :: tail -> 
+            let (+>) = addAndMoveNext (inferOperators opTypes exps) tail 
+            match current, (tail |> List.tryHead), tail |> List.tryItem 1 with
+            | left, Some (Operator(opType)), Some right when opTypes |> List.contains opType->
+                (+>) left opType right
+            | _ -> 
+                tail |> inferOperators opTypes (exps @ [current])
+    and inferLogic = inferOperators [Multiply; Divide] List.empty >> inferOperators [Plus; Minus] List.empty
+    and addAndMoveNext continueWith tail left opType right = 
+        let getExpr expression= match expression with
+                                | Group x -> (Group(inferLogic x))
+                                | _ -> expression
 
-    expressions |> infer opType List.empty
+        let op = Operation (getExpr left, opType, getExpr right)
+        let next = tail |> List.skip 2 |> (@) [op]
+        next |> continueWith
+        
+    inferLogic expressions |> List.head

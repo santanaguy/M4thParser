@@ -1,6 +1,6 @@
 ﻿module fsharpLearn.Types
 
-type OperatorType = 
+type OpType = 
     | Plus
     | Minus
     | Multiply
@@ -9,21 +9,21 @@ type OperatorType =
 type Token = 
     | NumberToken of value : decimal * token : string
     | VariableToken of value : string * token : string
-    | OperatorToken of value : OperatorType * token : string
+    | OpToken of value : OpType * token : string
     | GroupStartToken of token : string
     | GroupEndToken of token : string
     | DecimalSeparatorToken
     | UnrecognizedToken of token : string
     member x.getExpression() = 
         match x with
-        | NumberToken(_, t) | VariableToken(_, t) | OperatorToken(_, t) | GroupStartToken(t) | GroupEndToken(t) | UnrecognizedToken t -> 
+        | NumberToken(_, t) | VariableToken(_, t) | OpToken(_, t) | GroupStartToken(t) | GroupEndToken(t) | UnrecognizedToken t -> 
             "\r\n" + t
         | DecimalSeparatorToken -> "\r\n" + "."
 
 type Expression = 
     | Number of decimal
     | Variable of string
-    | Operator of Expression * OperatorType * Expression 
+    | Operator of OpType
+    | Operation of Expression * OpType * Expression 
     | Group of Expression list
-    | NotYetParsed of Token
-    | TempPlaceholder
+    | Unparsed of Token
