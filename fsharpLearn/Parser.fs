@@ -61,31 +61,23 @@ let getTokensFromGroup tokens =
                                 | true, _ -> 
                                         ([x],state)) 1
         
-let buildExpressions tokens = 
-    let rec build exps xs = 
-        match xs with
-        | [] -> exps
+let rec buildExpressions tokens = 
+        match tokens with
+        | [] -> []
         | x :: tail -> 
             match x with
             | NumberToken(v, _) ->
-                updateAndMoveNext exps (Number(v)) tail
+                Number(v) :: (tail |> buildExpressions)
             | VariableToken(v, _) -> 
-                updateAndMoveNext exps (Variable(v)) tail
+                Variable(v) :: (tail |> buildExpressions)
             | GroupStartToken(_) -> 
                 let tokensFromGroup = tail |> getTokensFromGroup
-                let newGroupContent = tokensFromGroup |> build List.empty 
-                let newGroup = Group(newGroupContent)
                 let tailWithoutTokensFromGroup = tail |> List.skip tokensFromGroup.Length
-                updateAndMoveNext exps newGroup tailWithoutTokensFromGroup
-            | GroupEndToken(_) -> exps
-            | OpToken(t,_) -> updateAndMoveNext exps (Operator(t)) tail
+                Group(buildExpressions tokensFromGroup) ::  buildExpressions tailWithoutTokensFromGroup
+            | GroupEndToken(_) -> []
+            | OpToken(t,_) -> Operator(t) :: buildExpressions tail
             | UnrecognizedToken(_) | DecimalSeparatorToken -> 
-                updateAndMoveNext exps (Unparsed(x)) tail
-
-    and updateAndMoveNext exps newExp tail = 
-        tail |> build (exps @ [ newExp ])
-
-    build List.empty tokens 
+                Unparsed(x) :: buildExpressions tail
 
 let inferMultiplications tokens = 
     tokens |> mapReduce (fun last item -> 
@@ -102,40 +94,36 @@ let inferMultiplications tokens =
         | _, _->
             [item],item) tokens.Head
                             
-let rec inferMissingZeroes last expressions = 
-    match expressions with
-    | [] -> []
-    | x :: tail -> match last, x with
+let rec inferMissingZeroes expressions = 
+    expressions |> 
+    mapReduce (fun last item ->
+                match last, item with
                     | None, Operator(t) when t = Plus || t = Minus -> 
-                        Number(0m) :: x :: (tail |> inferMissingZeroes (Some x))
+                        [Number(0m); item], Some item
                     | Some(Operator(t1)), Operator(t2) 
                         when (t1 = Plus || t1 = Minus) && (t2 = Plus || t2 = Minus) ->
-                            Number(0m) :: x :: (tail |> inferMissingZeroes (Some x))
+                         [Number(0m); item], Some item
                     | _, Group(inner) -> 
-                        let grp =Group(inner |> inferMissingZeroes None)
-                        grp :: (tail |> inferMissingZeroes (Some grp))
+                        let grp =Group(inner |> inferMissingZeroes)
+                        [grp], Some grp 
                     | _ -> 
-                        x :: (tail |> inferMissingZeroes (Some x))
-    
-let parseOperators expressions= 
-    let rec inferOperators opTypes exps xs =
-        match xs with
-        | [] -> exps
-        | current :: tail -> 
-            let (+>) = addAndMoveNext (inferOperators opTypes exps) tail 
-            match current, (tail |> List.tryHead), tail |> List.tryItem 1 with
-            | left, Some (Operator(opType)), Some right when opTypes |> List.contains opType->
-                (+>) left opType right
-            | _ -> 
-                tail |> inferOperators opTypes (exps @ [current])
-    and inferLogic = inferOperators[Power] List.empty >> inferOperators [Multiply; Divide] List.empty >> inferOperators [Plus; Minus] List.empty
-    and addAndMoveNext continueWith tail left opType right = 
-        let getExpr expression= match expression with
-                                | Group x -> (Group(inferLogic x))
-                                | _ -> expression
+                        [item], Some item) None
 
-        let op = Operation (getExpr left, opType, getExpr right)
-        let next = tail |> List.skip 2 |> (@) [op]
-        next |> continueWith
+let parseOperators expressions= 
+    let rec inferOperators opTypes xs =
+        match xs with
+        | [] -> []
+        | current :: tail -> 
+            match (tail |> List.tryHead), tail |> List.tryItem 1 with
+            | Some (Operator(opType)), Some right when opTypes |> List.contains opType->
+                let getExpr current = match current with
+                                        | Group x -> (Group(inferLogic x))
+                                        | _ -> current
+
+                let op = Operation (getExpr current, opType, getExpr right)
+                let next = tail |> List.skip 2 |> (@) [op]
+                (inferOperators opTypes next)
+            | _ -> current :: (tail |> inferOperators opTypes)
+    and inferLogic = inferOperators[Power] >> inferOperators [Multiply; Divide] >> inferOperators [Plus; Minus]
         
     inferLogic expressions |> List.head
