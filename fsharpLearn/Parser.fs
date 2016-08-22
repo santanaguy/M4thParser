@@ -9,6 +9,7 @@ let removeLastN nr col =
     col
     |> List.take (col.Length - nr)
     |> List.ofSeq
+let mapReduce f state = List.mapFold f state >> fst >> List.reduce(@)
 
 let removeLast = removeLastN 1
 
@@ -18,6 +19,7 @@ let parseToken token =
     | "+" -> OpToken(Plus, token)
     | "-" -> OpToken(Minus, token)
     | "*" -> OpToken(Multiply, token)
+    | "^" -> OpToken(Power, token)
     | "/" -> OpToken(Divide, token)
     | "(" -> GroupStartToken "("
     | ")" -> GroupEndToken ")"
@@ -31,41 +33,34 @@ let parseTokens tokens =
     |> List.ofSeq
 
 let joinNumbers tokens = 
-    let foldNumbers tokens currentToken = 
-        match tokens |> List.tryLast, currentToken with
-        | Some(NumberToken(_, prevToken)), NumberToken(_, token) -> 
-            removeLast tokens @ [ NumberToken(decimal (prevToken + token), prevToken + token) ]
-        | _, _ -> tokens @ [ currentToken ]
-    tokens |> List.fold foldNumbers List.empty
+    tokens |> List.fold (fun tokens currentToken -> 
+                            match tokens |> List.tryLast, currentToken with
+                            | Some(NumberToken(_, prevToken)), NumberToken(_, token) -> 
+                                removeLast tokens @ [ NumberToken(decimal (prevToken + token), prevToken + token) ]
+                            | _, _ -> tokens @ [ currentToken ]) List.empty
 
 let joinDecimals tokens = 
-    let foldDecimals tokens currentToken = 
-        match (tokens |> List.tryLast, tokens |> List.tryItem (tokens.Length - 2), currentToken) with
-        | Some(DecimalSeparatorToken), Some(NumberToken(_, t)), NumberToken(_, ct) -> 
-            let numberAsString = t + "." + ct
-            (tokens |> removeLastN 2) @ [ NumberToken(decimal numberAsString, numberAsString) ]
-        | _, _, _ -> tokens @ [ currentToken ]
-    tokens |> List.fold foldDecimals List.empty
+    tokens |> List.fold (fun tokens currentToken ->
+                        match (tokens |> List.tryItem (tokens.Length - 2),  tokens |> List.tryLast, currentToken) with
+                        | Some(NumberToken(_, t)), Some DecimalSeparatorToken, NumberToken(_, ct) -> 
+                            let numberAsString = t + "." + ct
+                            (tokens |> removeLastN 2) @ [ NumberToken(decimal numberAsString, numberAsString) ]
+                        | _ -> tokens @ [ currentToken ]) List.empty
 
-let getTokensFromGroup tokens  =
-    let rec getTokens depth tokens xs =
-        match xs with
-        | [] -> tokens
-        | x :: tail -> 
-            match x with
-                | GroupEndToken(_) -> 
-                    let updated = tokens @ [ x ]
-                    if depth > 1 then 
-                        tail |> getTokens (depth - 1) updated
-                    else 
-                        updated
-                | GroupStartToken(_) -> 
-                        tail |> getTokens (depth + 1) (tokens @ [ x ]) 
-                | _ -> 
-                        tail |> getTokens depth (tokens @ [ x ]) 
+let getTokensFromGroup tokens =
+    tokens |> mapReduce (fun state x-> 
+                            match state >= 1, x with
+                                | false, _ -> ([],state)
+                                | true, GroupEndToken(_) -> 
+                                    if state >= 1 then 
+                                        ([x],state-1) 
+                                    else 
+                                        ([x],state)
+                                | true, GroupStartToken(_) -> 
+                                        ([x], state+1)
+                                | true, _ -> 
+                                        ([x],state)) 1
         
-    tokens |> getTokens 1 List.empty
-
 let buildExpressions tokens = 
     let rec build exps xs = 
         match xs with
@@ -92,41 +87,36 @@ let buildExpressions tokens =
 
     build List.empty tokens 
 
-let inferMultiplications tokens =
-    let fold acc current = 
-        match acc |> List.tryLast, current  with
-        | Some(NumberToken(_)),VariableToken(_)
-        | Some(NumberToken(_)),GroupStartToken(_)
-        | Some(VariableToken(_)), NumberToken(_)
-        | Some(VariableToken(_)), VariableToken(_)
-        | Some(VariableToken(_)), GroupStartToken(_) 
-        | Some(GroupEndToken(_)), NumberToken(_) 
-        | Some(GroupEndToken(_)), VariableToken(_)
-        | Some(GroupEndToken(_)), GroupStartToken(_)->
-            acc @ [ OpToken(Multiply, "*"); current]
+let inferMultiplications tokens = 
+    tokens |> mapReduce (fun last item -> 
+        match last, item  with
+        | NumberToken(_),VariableToken(_)
+        | NumberToken(_),GroupStartToken(_)
+        | VariableToken(_), NumberToken(_)
+        | VariableToken(_), VariableToken(_)
+        | VariableToken(_), GroupStartToken(_) 
+        | GroupEndToken(_), NumberToken(_) 
+        | GroupEndToken(_), VariableToken(_)
+        | GroupEndToken(_), GroupStartToken(_)->
+             [OpToken(Multiply, "*"); item],item
         | _, _->
-            acc @ [current]
-    tokens |> List.fold fold List.empty
+            [item],item) tokens.Head
                             
-let inferMissingZeroes expressions = 
-    let rec infer exps xs =
-        match xs with
-        | [] -> exps
-        | x :: tail -> match exps |> List.tryLast, x with
-                        | None, Operator(_) -> 
-                            let updated = exps @ [Number(0m); x]
-                            tail |> infer updated
-                        | Some(Operator(_)), Operator(_) -> 
-                            let updated = exps @ [Number(0m); x]
-                            tail |> infer updated
-                        | _, Group(inner) -> 
-                            let updated = exps @ [Group(inner |> infer List.empty)]
-                            tail |> infer updated
-                        | _ -> 
-                            tail |> infer (exps @ [x])
+let rec inferMissingZeroes last expressions = 
+    match expressions with
+    | [] -> []
+    | x :: tail -> match last, x with
+                    | None, Operator(t) when t = Plus || t = Minus -> 
+                        Number(0m) :: x :: (tail |> inferMissingZeroes (Some x))
+                    | Some(Operator(t1)), Operator(t2) 
+                        when (t1 = Plus || t1 = Minus) && (t2 = Plus || t2 = Minus) ->
+                            Number(0m) :: x :: (tail |> inferMissingZeroes (Some x))
+                    | _, Group(inner) -> 
+                        let grp =Group(inner |> inferMissingZeroes None)
+                        grp :: (tail |> inferMissingZeroes (Some grp))
+                    | _ -> 
+                        x :: (tail |> inferMissingZeroes (Some x))
     
-    expressions |> infer List.empty
-
 let parseOperators expressions= 
     let rec inferOperators opTypes exps xs =
         match xs with
@@ -138,7 +128,7 @@ let parseOperators expressions=
                 (+>) left opType right
             | _ -> 
                 tail |> inferOperators opTypes (exps @ [current])
-    and inferLogic = inferOperators [Multiply; Divide] List.empty >> inferOperators [Plus; Minus] List.empty
+    and inferLogic = inferOperators[Power] List.empty >> inferOperators [Multiply; Divide] List.empty >> inferOperators [Plus; Minus] List.empty
     and addAndMoveNext continueWith tail left opType right = 
         let getExpr expression= match expression with
                                 | Group x -> (Group(inferLogic x))

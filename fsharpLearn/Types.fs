@@ -5,6 +5,7 @@ type OpType =
     | Minus
     | Multiply
     | Divide
+    | Power
 
 type Token = 
     | NumberToken of value : decimal * token : string
@@ -17,8 +18,8 @@ type Token =
     member x.getExpression() = 
         match x with
         | NumberToken(_, t) | VariableToken(_, t) | OpToken(_, t) | GroupStartToken(t) | GroupEndToken(t) | UnrecognizedToken t -> 
-            "\r\n" + t
-        | DecimalSeparatorToken -> "\r\n" + "."
+            t
+        | DecimalSeparatorToken ->  "."
 
 type Expression = 
     | Number of decimal
