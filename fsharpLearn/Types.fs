@@ -9,7 +9,8 @@ type OpType =
 
 type Token = 
     | NumberToken of value : decimal * token : string
-    | VariableToken of value : string * token : string
+    | LetterToken of value : string
+    | FunctionToken of value : string
     | OpToken of value : OpType * token : string
     | GroupStartToken of token : string
     | GroupEndToken of token : string
@@ -17,14 +18,14 @@ type Token =
     | UnrecognizedToken of token : string
     member x.getExpression() = 
         match x with
-        | NumberToken(_, t) | VariableToken(_, t) | OpToken(_, t) | GroupStartToken(t) | GroupEndToken(t) | UnrecognizedToken t -> 
+        | NumberToken(_, t) | LetterToken(t) | OpToken(_, t) | GroupStartToken(t) | GroupEndToken(t) | UnrecognizedToken t -> 
             t
-        | DecimalSeparatorToken ->  "."
+        | DecimalSeparatorToken -> "."
 
 type Expression = 
     | Number of decimal
     | Variable of string
     | Operator of OpType
-    | Operation of Expression * OpType * Expression 
+    | Operation of Expression * OpType * Expression
     | Group of Expression list
     | Unparsed of Token

@@ -16,6 +16,7 @@ let removeLast = removeLastN 1
 let parseToken token = 
     match token with
     | d when Regex.IsMatch(token, "^\d+(\.\d{1,2})?$") -> NumberToken(value = Decimal.Parse(d), token = token)
+    | l when Regex.IsMatch(token, "[a-zA-Z]") -> LetterToken(token)
     | "+" -> OpToken(Plus, token)
     | "-" -> OpToken(Minus, token)
     | "*" -> OpToken(Multiply, token)
@@ -24,7 +25,7 @@ let parseToken token =
     | "(" -> GroupStartToken "("
     | ")" -> GroupEndToken ")"
     | "." -> DecimalSeparatorToken
-    | "x" | "y" -> VariableToken(value = token, token = token)
+    | "x" | "y" -> LetterToken(value = token)
     | x -> UnrecognizedToken(x)
 
 let parseTokens tokens = 
@@ -68,7 +69,7 @@ let rec buildExpressions tokens =
             match x with
             | NumberToken(v, _) ->
                 Number(v) :: (tail |> buildExpressions)
-            | VariableToken(v, _) -> 
+            | LetterToken(v) -> 
                 Variable(v) :: (tail |> buildExpressions)
             | GroupStartToken(_) -> 
                 let tokensFromGroup = tail |> getTokensFromGroup
@@ -82,13 +83,16 @@ let rec buildExpressions tokens =
 let inferMultiplications tokens = 
     tokens |> mapReduce (fun last item -> 
         match last, item  with
-        | NumberToken(_),VariableToken(_)
+        | NumberToken(_),LetterToken(_)
         | NumberToken(_),GroupStartToken(_)
-        | VariableToken(_), NumberToken(_)
-        | VariableToken(_), VariableToken(_)
-        | VariableToken(_), GroupStartToken(_) 
+        | LetterToken(_), NumberToken(_)
+        | LetterToken("x"), LetterToken("x")
+        | LetterToken("y"), LetterToken("y")
+        | LetterToken("x"), LetterToken("y")
+        | LetterToken("y"), LetterToken("x")
+        | LetterToken(_), GroupStartToken(_) 
         | GroupEndToken(_), NumberToken(_) 
-        | GroupEndToken(_), VariableToken(_)
+        | GroupEndToken(_), LetterToken(_)
         | GroupEndToken(_), GroupStartToken(_)->
              [OpToken(Multiply, "*"); item],item
         | _, _->
@@ -127,3 +131,31 @@ let parseOperators expressions=
     and inferLogic = inferOperators[Power] >> inferOperators [Multiply; Divide] >> inferOperators [Plus; Minus]
         
     inferLogic expressions |> List.head
+
+let parseFunctions tokens = 
+    let rec loop tokens = match tokens with
+                          | [] -> []
+                          | x :: tail ->
+                            match x with
+                            | GroupStartToken _ ->
+                                let functionToken = 
+                                    let tokensFromFunction = tail |> List.takeWhile (fun t -> match t with | LetterToken _ -> true | _ -> false)
+                                    
+                                    if tokensFromFunction |> List.isEmpty then
+                                        None
+                                    else    
+                                        let functionT = tokensFromFunction 
+                                                            |> List.reduce (fun first second -> 
+                                                                                match first, second with
+                                                                                | LetterToken t1, LetterToken t2 
+                                                                                | FunctionToken t1, LetterToken t2 
+                                                                                    -> FunctionToken (t2 + t1)
+                                                                                | _ -> first)  
+                                        Some (functionT)
+                                match functionToken with
+                                | Some ((FunctionToken t) as lt) -> 
+                                    GroupStartToken("(") :: lt :: loop (tail |> List.skip t.Length)
+                                | _ ->  GroupStartToken("(") ::  loop tail
+                            | _ -> x :: (tail |> loop)
+    
+    tokens |> List.rev |> loop |> List.rev

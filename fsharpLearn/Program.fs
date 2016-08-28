@@ -13,6 +13,7 @@ let getTokens = let toCharArray (s:string) = s.ToCharArray()
                 >> parseTokens
                 >> joinNumbers
                 >> joinDecimals
+                >> parseFunctions
                 >> inferMultiplications
 
 let parseInput = getTokens >> buildExpressions >> inferMissingZeroes

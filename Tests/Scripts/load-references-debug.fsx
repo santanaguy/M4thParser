@@ -6,8 +6,6 @@
 #r "System.Xml.dll"
 #r "System.Xml.Linq.dll"
 #r "../../fsharpLearn/bin/Debug/fsharpLearn.exe"
-#r "../../packages/FsUnit.2.3.1/lib/net45/FsUnit.NUnit.dll"
-#r "../../packages/FsUnit.2.3.1/lib/net45/NHamcrest.dll"
 #r "../../packages/NUnit.3.4.1/lib/net45/nunit.framework.dll"
 #r "../../packages/NUnit3TestAdapter.3.4.1/lib/Mono.Cecil.dll"
 #r "../../packages/NUnit3TestAdapter.3.4.1/lib/Mono.Cecil.Mdb.dll"
@@ -16,3 +14,4 @@
 #r "../../packages/NUnit3TestAdapter.3.4.1/lib/nunit.engine.api.dll"
 #r "../../packages/NUnit3TestAdapter.3.4.1/lib/nunit.engine.dll"
 #r "../../packages/NUnit3TestAdapter.3.4.1/lib/NUnit3.TestAdapter.dll"
+#r "../../packages/Unquote.3.1.2/lib/net45/Unquote.dll"

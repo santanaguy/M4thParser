@@ -1,10 +1,10 @@
 ﻿module Cenas
 
+open Swensen.Unquote
 open NUnit.Framework
 open fsharpLearn.mainModule
 open fsharpLearn.Parser
 open fsharpLearn.Types
-open FsUnit
 open System
 
 let plusT = OpToken(Plus,"+")
@@ -25,131 +25,144 @@ let startGroupT = GroupStartToken("(")
 let zero = Number(0m)
 let one = Number(1m)
 let two = Number(2m)
-let xVariableT = VariableToken("x", "x")
+let xVariableT = LetterToken("x")
 let xVariable = Variable("x")
-let yVariableT = VariableToken("y", "y")
+let yVariableT = LetterToken("y")
 let yVariable = Variable("y")
 let power b p= Operation(b, Power, p) 
+let sqrtT = FunctionToken("sqrt")
 
 [<Test>]
 let ``Parses simple expressions correctly``() = 
-    let test = parseInput "1+1"
-    test |> should equal [one; plusNotParsed; one]
+    let output = parseInput "1+1"
+    test <@output = [one; plusNotParsed; one]@>
 
 [<Test>]
 let ``Parses simple group correctly``()=
-    let test = parseInput "(1-1)"
-    test |> should equal [Group([one; minusNotParsed; one])]
+    let output = parseInput "(1-1)"
+    test <@output = [Group([one; minusNotParsed; one])]@>
 
 [<Test>]
 let ``Parses nested groups correctly``()=
-    let test = parseInput "((1+1)+((1+1)-1))"
-    test |> should equal [Group[Group[one; plusNotParsed; one]; plusNotParsed; Group[Group([one; plusNotParsed; one]); minusNotParsed; one]]]
+    let output = parseInput "((1+1)+((1+1)-1))"
+    test <@output = [Group[Group[one; plusNotParsed; one]; plusNotParsed; Group[Group([one; plusNotParsed; one]); minusNotParsed; one]]]@>
 
 [<Test>]
 let ``Parses nested groups correctly2``()=
-    let test = parseInput "((1)+1)"
-    test |> should equal [Group[Group([one]); plusNotParsed; one]]
+    let output = parseInput "((1)+1)"
+    test <@output = [Group[Group([one]); plusNotParsed; one]]@>
 
 [<Test>]
 let ``Parses nested groups correctly3``()=
-    let test = parseInput "((1-1)-(1+1))"
-    test |> should equal [Group[Group[one; minusNotParsed; one]; minusNotParsed; Group[one; plusNotParsed; one;]]]
+    let output = parseInput "((1-1)-(1+1))"
+    test <@output = [Group[Group[one; minusNotParsed; one]; minusNotParsed; Group[one; plusNotParsed; one;]]]@>
 
 [<Test>]
 let ``Detects implicit zero``()= 
-    let test = parseInput "1+-1--1"
-    test |> should equal [one; plusNotParsed; zero; minusNotParsed; one; minusNotParsed; zero; minusNotParsed; one]
+    let output = parseInput "1+-1--1"
+    test <@output = [one; plusNotParsed; zero; minusNotParsed; one; minusNotParsed; zero; minusNotParsed; one]@>
 
 [<Test>]
 let ``Detects implicit multiplication``()= 
-    let test = parseInput "1x1(1)"
-    test |> should equal [one; timesNotParsed; xVariable; timesNotParsed; one; timesNotParsed; Group([one])]
+    let output = parseInput "1x1(1)"
+    test <@output = [one; timesNotParsed; xVariable; timesNotParsed; one; timesNotParsed; Group([one])]@>
 
 [<Test>]
 let ``getTokensFromGroup deals with inner group correctly 2``()=
-    let test = getTokens "(1+1)+1)+1" |> getTokensFromGroup
-    test |> should equal [startGroupT; oneT; plusT; oneT; endGroupT; plusT; oneT; endGroupT;]
+    let output = getTokens "(1+1)+1)+1" |> getTokensFromGroup
+    test <@output = [startGroupT; oneT; plusT; oneT; endGroupT; plusT; oneT; endGroupT;]@>
 
 [<Test>]
 let ``getTokensFromGroup stops adding after group closed``()=
-    let test = getTokens "1+1)+(1)" |> getTokensFromGroup  
-    test |> should equal [oneT; plusT; oneT; endGroupT;]
+    let output = getTokens "1+1)+(1)" |> getTokensFromGroup  
+    test <@output = [oneT; plusT; oneT; endGroupT;]@>
 
 [<Test>]
 let ``InferMultiplications infers correctly simple``()=
-    let test = getTokens "11(1)1x1x(1)x" |> inferMultiplications 
-    test |> should equal [NumberToken(11m, "11"); timesT; startGroupT; 
+    let output = getTokens "11(1)1x1x(1)x" |> inferMultiplications 
+    test <@output = [NumberToken(11m, "11"); timesT; startGroupT; 
                         oneT; endGroupT; timesT; 
                         oneT; timesT; xVariableT; 
                         timesT; oneT; timesT; 
                         xVariableT; timesT; startGroupT; 
-                        oneT; endGroupT; timesT; xVariableT]
+                        oneT; endGroupT; timesT; xVariableT]@>
 
 [<Test>]
 let ``InferMultiplications infers correctly inside groups``()=
-    let test = getTokens "(1(xy)(x)1)" |> inferMultiplications
-    test |> should equal [startGroupT; oneT; timesT; startGroupT; xVariableT; timesT; yVariableT; endGroupT; timesT; startGroupT; xVariableT; endGroupT; timesT; oneT; endGroupT]
+    let output = getTokens "(1(xy)(x)1)" |> inferMultiplications
+    test <@output = [startGroupT; oneT; timesT; startGroupT; xVariableT; timesT; yVariableT; endGroupT; timesT; startGroupT; xVariableT; endGroupT; timesT; oneT; endGroupT]@>
+
+[<Test>]
+let ``InferMultiplications does not infer when function args``()=
+    let output = getTokens "sqrt(1)" |> inferMultiplications
+    test <@output = [sqrtT; startGroupT; oneT; endGroupT]@>
 
 [<Test>]
 let ``joinNumbers joins correctly simple``()=
-    let test = [oneT; oneT; plusT; oneT; oneT; ] |> joinNumbers
-    test |> should equal [NumberToken(11m, "11"); plusT; NumberToken(11m,"11")]
+    let output = [oneT; oneT; plusT; oneT; oneT; ] |> joinNumbers
+    test <@output = [NumberToken(11m, "11"); plusT; NumberToken(11m,"11")]@>
 
 [<Test>]
 let ``joinDecimals joins decimals correctly``()=
-    let test = [oneT; oneT; oneT; DecimalSeparatorToken; oneT; plusT; oneT; oneT; ] |> joinNumbers |> joinDecimals
-    test |> should equal [NumberToken(111.1m, "111.1"); plusT; NumberToken(11m,"11")]
+    let output = [oneT; oneT; oneT; DecimalSeparatorToken; oneT; plusT; oneT; oneT; ] |> joinNumbers |> joinDecimals
+    test <@output = [NumberToken(111.1m, "111.1"); plusT; NumberToken(11m,"11")]@>
 
 [<Test>]
 let ``joinDecimals joins decimals multiple figures``()=
-    let test = [oneT; oneT; oneT; DecimalSeparatorToken; oneT; oneT; plusT; oneT; ] |> joinNumbers |> joinDecimals
-    test |> should equal [NumberToken(111.11m, "111.11"); plusT; NumberToken(1m,"1")]
+    let output = [oneT; oneT; oneT; DecimalSeparatorToken; oneT; oneT; plusT; oneT; ] |> joinNumbers |> joinDecimals
+    test <@output = [NumberToken(111.11m, "111.11"); plusT; NumberToken(1m,"1")]@>
 
 [<Test>]
 let ``parseOperators parses correctly simple``() =
-    let test = parseInput "1+1" |> parseOperators 
-    test |> should equal (plus one one)
+    let output = parseInput "1+1" |> parseOperators 
+    test <@output = (plus one one)@>
 
 [<Test>]
 let ``parseOperators parses correctly chain``() =
-    let test = parseInput "1+1+1" |> parseOperators 
-    test |> should equal (plus (plus one one) (one))
+    let output = parseInput "1+1+1" |> parseOperators 
+    test <@output = (plus (plus one one) (one))@>
 
 [<Test>]
 let ``parseOperators parses correctly precedence simple``() =
-    let test = parseInput "1+0*1+2" |> parseOperators
-    test |> should equal (plus (plus (one) (times zero one)) two)
+    let output = parseInput "1+0*1+2" |> parseOperators
+    test <@output = (plus (plus (one) (times zero one)) two)@>
 
 [<Test>]
 let ``parseOperators respects order when priority is the same``() =
-    let test = parseInput "1+0-1+2" |> parseOperators
-    test |> should equal (plus (minus (plus one zero) (one)) two)
+    let output = parseInput "1+0-1+2" |> parseOperators
+    test <@output = (plus (minus (plus one zero) (one)) two)@>
 
 [<Test>]
 let ``parseOperators respects priority``() =
-    let test = parseInput "1+0*1/2-0" |> parseOperators 
-    test |> should equal (minus (plus one (divide (times zero one) two)) zero)
+    let output = parseInput "1+0*1/2-0" |> parseOperators 
+    test <@output = (minus (plus one (divide (times zero one) two)) zero)@>
 
 [<Test>]
 let ``parseOperators respects groups simple``() =
-    let test = parseInput "1(1+0)" |> parseOperators
-    test |> should equal (times one (Group [plus one zero]))
+    let output = parseInput "1(1+0)" |> parseOperators
+    test <@output = (times one (Group [plus one zero]))@>
 
-    let test2 = parseInput "(1+2)-2" |> parseOperators
-    test2 |> should equal (minus (Group[plus one two]) two)
+    let output = parseInput "(1+2)-2" |> parseOperators
+    test <@output =  (minus (Group[plus one two]) two)@>
 
 [<Test>]
 let ``parseOperators respects groups nested``() =
-    let test = parseInput "1((1+x) * (0+y))" |> parseOperators
-    test |> should equal (times one (Group[(times (Group[plus one xVariable]) (Group[plus zero yVariable]))]))
+    let output = parseInput "1((1+x) * (0+y))" |> parseOperators
+    test <@output = (times one (Group[(times (Group[plus one xVariable]) (Group[plus zero yVariable]))]))@>
 
 [<Test>]
 let ``parseOperators parses exponents``() =
-    let test = parseInput "2^2" |> parseOperators
-    test |> should equal (power two two)
+    let output = parseInput "2^2" |> parseOperators
+    test <@output = (power two two)@>
 
 [<Test>]
 let ``parseOperators parses exponents on groups``() =
-    let test = parseInput "2^(2+1)" |> parseOperators
-    test |> should equal (power two (Group[plus two one]))
+    let output = parseInput "2^(2+1)" |> parseOperators
+    test <@output = (power two (Group[plus two one]))@>
+
+[<Test>]
+let ``parseFunctions parses correct function``() =
+    let output = [LetterToken("s");LetterToken("q");LetterToken("r");LetterToken("t");startGroupT;oneT;endGroupT] |> parseFunctions
+    test <@output = [sqrtT; startGroupT; oneT; endGroupT]@>
+
+
