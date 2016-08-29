@@ -38,3 +38,4 @@ open fsharpLearn.Types
 open fsharpLearn.Parser
 open Cenas
 
+parseInput "(1+sqrt(1+sqrt(1)))*sqrt (1)"

@@ -14,10 +14,9 @@ let getTokens = let toCharArray (s:string) = s.ToCharArray()
                 >> joinNumbers
                 >> joinDecimals
                 >> parseFunctions
-                >> inferMultiplications
 
-let parseInput = getTokens >> buildExpressions >> inferMissingZeroes
-
+let parseInput = getTokens >> buildExpressions >> inferMultiplications >> inferMissingZeroes >> inferOperations
+  
 [<EntryPoint>]
 let main argv2 = 
     let rec takeInput() = 

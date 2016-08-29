@@ -9,7 +9,11 @@ let removeLastN nr col =
     col
     |> List.take (col.Length - nr)
     |> List.ofSeq
-let mapReduce f state = List.mapFold f state >> fst >> List.reduce(@)
+let safeReduce f l = match l with
+                     | [] -> []
+                     | _ -> l |> List.reduce (f)
+
+let mapReduce f state = List.mapFold f state >> fst >> safeReduce (@)
 
 let removeLast = removeLastN 1
 
@@ -17,15 +21,14 @@ let parseToken token =
     match token with
     | d when Regex.IsMatch(token, "^\d+(\.\d{1,2})?$") -> NumberToken(value = Decimal.Parse(d), token = token)
     | l when Regex.IsMatch(token, "[a-zA-Z]") -> LetterToken(token)
-    | "+" -> OpToken(Plus, token)
-    | "-" -> OpToken(Minus, token)
-    | "*" -> OpToken(Multiply, token)
-    | "^" -> OpToken(Power, token)
-    | "/" -> OpToken(Divide, token)
-    | "(" -> GroupStartToken "("
-    | ")" -> GroupEndToken ")"
+    | "+" -> OpToken(Plus)
+    | "-" -> OpToken(Minus)
+    | "*" -> OpToken(Multiply)
+    | "^" -> OpToken(Power)
+    | "/" -> OpToken(Divide)
+    | "(" -> GroupStartToken 
+    | ")" -> GroupEndToken
     | "." -> DecimalSeparatorToken
-    | "x" | "y" -> LetterToken(value = token)
     | x -> UnrecognizedToken(x)
 
 let parseTokens tokens = 
@@ -47,6 +50,33 @@ let joinDecimals tokens =
                             let numberAsString = t + "." + ct
                             (tokens |> removeLastN 2) @ [ NumberToken(decimal numberAsString, numberAsString) ]
                         | _ -> tokens @ [ currentToken ]) List.empty
+
+let parseFunctions tokens = 
+    let rec loop tokens = match tokens with
+                          | [] -> []
+                          | x :: tail ->
+                            match x with
+                            | GroupStartToken _ ->
+                                let functionToken = 
+                                    let funName = tail 
+                                                    |> List.mapFold(fun keepGoing token -> match (keepGoing, token) with | (true, LetterToken lt) -> (lt,true) | _ -> ("",false)) true
+                                                    |> fst
+                                                    |> List.rev
+                                                    |> String.Concat
+                                   
+                                    match funName |> String.length with
+                                    | 0 -> None
+                                    | 1 -> Some (LetterToken(funName)) //this assumes there are no functions with only one letter... not sure if i can
+                                    | _ -> Some (FunctionToken(funName))
+
+                                match functionToken with
+                                | Some ((FunctionToken t) as lt)
+                                | Some ((LetterToken t) as lt) -> 
+                                    GroupStartToken :: lt :: loop (tail |> List.skip t.Length)
+                                | _ ->  GroupStartToken ::  loop tail
+                            | _ -> x :: (tail |> loop)
+    
+    tokens |> List.rev |> loop |> List.rev
 
 let getTokensFromGroup tokens =
     tokens |> mapReduce (fun state x-> 
@@ -76,44 +106,50 @@ let rec buildExpressions tokens =
                 let tailWithoutTokensFromGroup = tail |> List.skip tokensFromGroup.Length
                 Group(buildExpressions tokensFromGroup) ::  buildExpressions tailWithoutTokensFromGroup
             | GroupEndToken(_) -> []
-            | OpToken(t,_) -> Operator(t) :: buildExpressions tail
+            | OpToken(t) -> Operator(t) :: buildExpressions tail
+            | FunctionToken(t) -> 
+                let tokensFromGroup = tail.Tail |> getTokensFromGroup
+                let tailWithoutTokensFromGroup = tail.Tail |> List.skip tokensFromGroup.Length
+                match t.ToLower() with
+                | "sqrt" -> Sqrt (Group(buildExpressions tokensFromGroup))  :: buildExpressions tailWithoutTokensFromGroup
+                | _ -> Unparsed(x) :: buildExpressions tail
             | UnrecognizedToken(_) | DecimalSeparatorToken -> 
                 Unparsed(x) :: buildExpressions tail
 
-let inferMultiplications tokens = 
-    tokens |> mapReduce (fun last item -> 
-        match last, item  with
-        | NumberToken(_),LetterToken(_)
-        | NumberToken(_),GroupStartToken(_)
-        | LetterToken(_), NumberToken(_)
-        | LetterToken("x"), LetterToken("x")
-        | LetterToken("y"), LetterToken("y")
-        | LetterToken("x"), LetterToken("y")
-        | LetterToken("y"), LetterToken("x")
-        | LetterToken(_), GroupStartToken(_) 
-        | GroupEndToken(_), NumberToken(_) 
-        | GroupEndToken(_), LetterToken(_)
-        | GroupEndToken(_), GroupStartToken(_)->
-             [OpToken(Multiply, "*"); item],item
-        | _, _->
-            [item],item) tokens.Head
-                            
+let rec inferMultiplications expressions = 
+    let getNewSqrt inner = match inner with | Group(expr) -> Sqrt(Group(inferMultiplications expr)) | _ -> Sqrt(inner)
+    let matchCurrent current = match current with
+                                | Group(inner) -> [Operator(Multiply); Group(inferMultiplications inner)], Some (Group(inferMultiplications inner))
+                                | Sqrt(inner) -> [Operator(Multiply); getNewSqrt inner], Some (getNewSqrt inner)
+                                | Number(_) | Variable(_) -> [Operator(Multiply); current], Some (current)
+                                | Operator(_) | Operation(_) | Unparsed(_) -> [current], Some(current)
+    
+    expressions |> mapReduce (fun last current -> 
+          match last with
+          | None ->  
+            match current with
+            | Group(inner) -> [Group(inferMultiplications inner)], Some (Group(inferMultiplications inner))
+            | Sqrt(inner) -> [getNewSqrt inner], Some (getNewSqrt inner)
+            | Number(_) | Variable(_) | Operator(_) | Operation(_) | Unparsed(_) -> [current], Some(current)
+          | Some(Variable(_)) | Some(Number(_)) | Some(Group(_)) | Some(Sqrt(_)) -> matchCurrent current
+          | Some(Operation(_)) | Some(Operator(_)) | Some(Unparsed(_)) -> [current], Some(current)) None  
+
 let rec inferMissingZeroes expressions = 
     expressions |> 
-    mapReduce (fun last item ->
-                match last, item with
-                    | None, Operator(t) when t = Plus || t = Minus -> 
-                        [Number(0m); item], Some item
-                    | Some(Operator(t1)), Operator(t2) 
-                        when (t1 = Plus || t1 = Minus) && (t2 = Plus || t2 = Minus) ->
-                         [Number(0m); item], Some item
-                    | _, Group(inner) -> 
-                        let grp =Group(inner |> inferMissingZeroes)
-                        [grp], Some grp 
-                    | _ -> 
-                        [item], Some item) None
+    mapReduce (fun last current ->
+                match last with
+                | None | Some(Operator(_)) -> 
+                    match current with 
+                    | Operator(t2) when (t2 = Plus || t2 = Minus) -> [Number(0m); current], Some current
+                    | Group(inner) -> [Group(inner |> inferMissingZeroes)], Some(Group(inner |> inferMissingZeroes))
+                    | Sqrt(inner) -> 
+                        let newExpr = match inner with | Group(exp) -> Sqrt(Group(inferMissingZeroes exp)) | _ -> Sqrt(inner)
+                        [newExpr], Some(newExpr)
+                    | Variable(_) | Number(_) | Operation(_) | Unparsed(_) | Operator(_)-> [current], Some current
+                | Some(Variable(_)) | Some(Number(_)) | Some(Operator(_)) 
+                | Some(Operation(_)) | Some(Unparsed(_)) | Some(Group(_)) | Some(Sqrt(_))-> [current], Some current) None
 
-let parseOperators expressions= 
+let inferOperations expressions= 
     let rec inferOperators opTypes xs =
         match xs with
         | [] -> []
@@ -122,6 +158,7 @@ let parseOperators expressions=
             | Some (Operator(opType)), Some right when opTypes |> List.contains opType->
                 let getExpr current = match current with
                                         | Group x -> (Group(inferLogic x))
+                                        | Sqrt (Group inner) -> Sqrt(Group(inferLogic inner))
                                         | _ -> current
 
                 let op = Operation (getExpr current, opType, getExpr right)
@@ -130,32 +167,4 @@ let parseOperators expressions=
             | _ -> current :: (tail |> inferOperators opTypes)
     and inferLogic = inferOperators[Power] >> inferOperators [Multiply; Divide] >> inferOperators [Plus; Minus]
         
-    inferLogic expressions |> List.head
-
-let parseFunctions tokens = 
-    let rec loop tokens = match tokens with
-                          | [] -> []
-                          | x :: tail ->
-                            match x with
-                            | GroupStartToken _ ->
-                                let functionToken = 
-                                    let tokensFromFunction = tail |> List.takeWhile (fun t -> match t with | LetterToken _ -> true | _ -> false)
-                                    
-                                    if tokensFromFunction |> List.isEmpty then
-                                        None
-                                    else    
-                                        let functionT = tokensFromFunction 
-                                                            |> List.reduce (fun first second -> 
-                                                                                match first, second with
-                                                                                | LetterToken t1, LetterToken t2 
-                                                                                | FunctionToken t1, LetterToken t2 
-                                                                                    -> FunctionToken (t2 + t1)
-                                                                                | _ -> first)  
-                                        Some (functionT)
-                                match functionToken with
-                                | Some ((FunctionToken t) as lt) -> 
-                                    GroupStartToken("(") :: lt :: loop (tail |> List.skip t.Length)
-                                | _ ->  GroupStartToken("(") ::  loop tail
-                            | _ -> x :: (tail |> loop)
-    
-    tokens |> List.rev |> loop |> List.rev
+    inferLogic expressions
