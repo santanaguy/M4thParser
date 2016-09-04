@@ -21,7 +21,13 @@ type Expression =
     | Number of decimal
     | Variable of string
     | Operator of OpType
-    | Sqrt of Expression
+    | Sqrt of Param
+    | Sin of Param
     | Operation of Expression * OpType * Expression
     | Group of Expression list
     | Unparsed of Token
+and Param = Param of Expression list
+
+type newOperation = 
+    | Op of left: newOperation * opType: OpType * right: newOperation
+    

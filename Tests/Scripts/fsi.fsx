@@ -38,4 +38,17 @@ open fsharpLearn.Types
 open fsharpLearn.Parser
 open Cenas
 
-parseInput "(1+sqrt(1+sqrt(1)))*sqrt (1)"
+//buildExpressions parses sin
+//getTokens "sin((1(x/2)))" |> buildExpressions
+
+//inferMultiplications parses sin 
+//getTokens "sin((1(x/2)))" |> buildExpressions
+//|> inferMultiplications
+
+//inferMissingZeroes infers 0s
+//getTokens "Sqrt(1(-2))" |> buildExpressions |> inferMultiplications |> inferMissingZeroes
+
+getTokens "1+0*1+2" |> buildExpressions |> inferOperations
+
+//inferOperations infersOperations inside sin
+// inferOperations [Operator Plus; Number 3M]
