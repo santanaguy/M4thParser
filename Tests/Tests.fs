@@ -120,50 +120,50 @@ let ``joinDecimals joins decimals multiple figures``()=
 [<Test>]
 let ``inferOperations parses correctly simple``() =
     let output = parseInput "1+1" |> inferOperations 
-    test <@output = one + one@>
+    test <@output = [one + one]@>
 
 [<Test>]
 let ``inferOperations parses correctly chain``() =
     let output = parseInput "1+1+1" |> inferOperations 
-    test <@output = (one + one) + (one)@>
+    test <@output = [(one + one) + (one)]@>
 
 [<Test>]
 let ``inferOperations parses correctly precedence simple``() =
     let output = parseInput "1+0*1+2" |> inferOperations
-    test <@output = ((one) + (zero * one)) + two@>
+    test <@output = [((one) + (zero * one)) + two]@>
 
 [<Test>]
 let ``inferOperations respects order when priority is the same``() =
     let output = parseInput "1+0-1+2" |> inferOperations
-    test <@output = ((one + zero) - (one)) + two@>
+    test <@output = [((one + zero) - (one)) + two]@>
 
 [<Test>]
 let ``inferOperations respects priority``() =
     let output = parseInput "1+0*1/2-0" |> inferOperations 
-    test <@output = (one + ((zero * one) / two)) - zero@>
+    test <@output = [(one + ((zero * one) / two)) - zero]@>
 
 [<Test>]
 let ``inferOperations respects groups simple``() =
     let output = parseInput "1(1+0)" |> inferOperations
-    test <@output = one * (Group [one + zero])@>
+    test <@output = [one * (Group [one + zero])]@>
 
     let output = parseInput "(1+2)-2" |> inferOperations
-    test <@output =  Group[one + two] - two@>
+    test <@output =  [Group[one + two] - two]@>
 
 [<Test>]
 let ``parseOperators respects groups nested``() =
     let output = parseInput "1((1+x) * (0+y))" |> inferOperations
-    test <@output = one * Group[Group[one + xVariable] * Group[zero + yVariable]]@>
+    test <@output = [one * Group[Group[one + xVariable] * Group[zero + yVariable]]]@>
 
 [<Test>]
 let ``inferOperations parses exponents``() =
     let output = parseInput "2^2" |> inferOperations
-    test <@output = two ^ two@>
+    test <@output = [two ^ two]@>
 
 [<Test>]
 let ``inferOperations parses exponents on groups``() =
     let output = parseInput "2^(2+1)" |> inferOperations
-    test <@output = two ^ Group[two + one]@>
+    test <@output = [two ^ Group[two + one]]@>
 
 [<Test>]
 let ``parseFunctions parses correct function``() =
@@ -183,10 +183,32 @@ let ``buildExpressions recognizes sin``() =
 [<Test>]
 let ``sin is recognized correctly``() = 
     let output = parseComplete "sin(1+1)"
-    test <@output = Sin(Param([one + one]))@>
+    test <@output = [Sin(Param([one + one]))]@>
 
 [<Test>]
 let ``sin is recognized correctly when in larger expression``() = 
-    test <@parseComplete "1 + sin(1 + 1)" = one + Sin(Param[one + one])@>
-    test <@parseComplete "sin(1 + 1) + 1" = Sin(Param[one + one]) + one @>
-    test <@parseComplete "1 + sin(1 + 1) + 1" = (one + Sin(Param[one + one])) + one@>
+    test <@parseComplete "1 + sin(1 + 1)" = [one + Sin(Param[one + one])]@>
+    test <@parseComplete "sin(1 + 1) + 1" = [Sin(Param[one + one]) + one] @>
+    test <@parseComplete "1 + sin(1 + 1) + 1" = [(one + Sin(Param[one + one])) + one]@>
+
+[<Test>]
+let ``cos is recognized correctly``() = 
+    let output = parseComplete "cos(1+1)"
+    test <@output = [Cos(Param([one + one]))]@>
+
+[<Test>]
+let ``cos is recognized correctly when in larger expression``() = 
+    test <@parseComplete "1 + cos(1 + 1)" = [one + Cos(Param[one + one])]@>
+    test <@parseComplete "cos(1 + 1) + 1" = [Cos(Param[one + one]) + one] @>
+    test <@parseComplete "1 + cos(1 + 1) + 1" = [(one + Cos(Param[one + one])) + one]@>
+
+[<Test>]
+let ``tan is recognized correctly``() = 
+    let output = parseComplete "tan(1+1)"
+    test <@output = [Tan(Param([one + one]))]@>
+
+[<Test>]
+let ``tan is recognized correctly when in larger expression``() = 
+    test <@parseComplete "1 + tan(1 + 1)" = [one + Tan(Param[one + one])]@>
+    test <@parseComplete "tan(1 + 1) + 1" = [Tan(Param[one + one]) + one] @>
+    test <@parseComplete "1 + tan(1 + 1) + 1" = [(one + Tan(Param[one + one])) + one]@>

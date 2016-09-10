@@ -22,7 +22,9 @@ let (>=>) expr f =
     | Group(inner) -> Group(f inner)
     | Sqrt(Param(inner)) -> Sqrt(Param(f inner))
     | Sin(Param(inner)) -> Sin(Param(f inner))
-    | _ -> expr
+    | Cos(Param(inner)) -> Cos(Param(f inner))
+    | Tan(Param(inner)) -> Tan(Param(f inner))
+    | Number(_) | Variable(_) | Operator(_) | Operation(_) | Unparsed(_) -> expr
 
 let parseToken token = 
     match token with
@@ -105,45 +107,34 @@ let rec buildExpressions tokens =
         | [] -> []
         | x :: tail -> 
             match x with
-            | NumberToken(v, _) ->
-                Number(v) :: (tail |> buildExpressions)
-            | LetterToken(v) -> 
-                Variable(v) :: (tail |> buildExpressions)
-            | GroupStartToken(_) -> 
+            | GroupEndToken(_) -> []
+            | NumberToken(v, _) -> Number(v) :: (tail |> buildExpressions)
+            | LetterToken(v) -> Variable(v) :: (tail |> buildExpressions)
+            | OpToken(t) -> Operator(t) :: (tail |> buildExpressions)
+            | UnrecognizedToken(_) | DecimalSeparatorToken -> Unparsed(x) :: buildExpressions tail
+            | GroupStartToken(_) ->
                 let tokensFromGroup = tail |> getTokensFromGroup
                 let tailWithoutTokensFromGroup = tail |> List.skip tokensFromGroup.Length
                 Group(buildExpressions tokensFromGroup) ::  buildExpressions tailWithoutTokensFromGroup
-            | GroupEndToken(_) -> []
-            | OpToken(t) -> Operator(t) :: buildExpressions tail
             | FunctionToken(t) -> 
                 let tokensFromGroup = tail.Tail |> getTokensFromGroup
                 let tailWithoutTokensFromGroup = tail.Tail |> List.skip tokensFromGroup.Length
                 match t.ToLower() with
                 | "sqrt" -> Sqrt (Param(buildExpressions tokensFromGroup))  :: buildExpressions tailWithoutTokensFromGroup
                 | "sin" -> Sin (Param(buildExpressions tokensFromGroup))  :: buildExpressions tailWithoutTokensFromGroup
+                | "cos" -> Cos (Param(buildExpressions tokensFromGroup))  :: buildExpressions tailWithoutTokensFromGroup
+                | "tan" -> Tan (Param(buildExpressions tokensFromGroup))  :: buildExpressions tailWithoutTokensFromGroup
                 | _ -> Unparsed(x) :: buildExpressions tail
-            | UnrecognizedToken(_) | DecimalSeparatorToken -> 
-                Unparsed(x) :: buildExpressions tail
 
 let rec inferMultiplications expressions = 
-    let getSqrt inner = Sqrt(Param(inferMultiplications inner))
-    let getSin inner = Sin(Param(inferMultiplications inner))
     let matchCurrent current = match current with
-                                | Group(inner) -> [Operator(Multiply); Group(inferMultiplications inner)], Some (Group(inferMultiplications inner))
-                                | Sqrt(Param(inner)) -> [Operator(Multiply); getSqrt inner], Some (getSqrt inner)
-                                | Sin(Param(inner)) -> [Operator(Multiply); getSin inner], Some (getSin inner)
-                                | Number(_) | Variable(_) -> [Operator(Multiply); current], Some (current)
                                 | Operator(_) | Operation(_) | Unparsed(_) -> [current], Some(current)
+                                | _ -> [Operator(Multiply); current >=> inferMultiplications], Some (current)
     
     expressions |> mapReduce (fun last current -> 
           match last with
-          | None ->  
-            match current with
-            | Group(inner) -> [Group(inferMultiplications inner)], Some (Group(inferMultiplications inner))
-            | Sqrt(Param(inner)) -> [getSqrt inner], Some (getSqrt inner)
-            | Sin(Param(inner)) -> [getSin inner], Some (getSin inner)
-            | Number(_) | Variable(_) | Operator(_) | Operation(_) | Unparsed(_) -> [current], Some(current)
-          | Some(Variable(_)) | Some(Number(_)) | Some(Group(_)) | Some(Sqrt(_)) | Some(Sin(_)) -> matchCurrent current
+          | None ->  [current >=> inferMultiplications], Some (current >=> inferMultiplications)
+          | Some(Variable(_)) | Some(Number(_)) | Some(Group(_)) | Some(Sqrt(_)) | Some(Sin(_)) | Some(Cos(_)) | Some(Tan(_)) -> matchCurrent current
           | Some(Operation(_)) | Some(Operator(_)) | Some(Unparsed(_)) -> [current], Some(current)) None  
 
 let rec inferMissingZeroes expressions = 
@@ -153,20 +144,14 @@ let rec inferMissingZeroes expressions =
                 | None | Some(Operator(_)) -> 
                     match current with 
                     | Operator(t2) when (t2 = Plus || t2 = Minus) -> [Number(0m); current], Some current
-                    | Group(inner) -> [Group(inner |> inferMissingZeroes)], Some(Group(inner |> inferMissingZeroes))
-                    | Sqrt(Param(exp)) -> [Sqrt(Param(inferMissingZeroes exp))], Some(Sqrt(Param(inferMissingZeroes exp)))
-                    | Sin(Param(exp)) -> [Sin(Param(inferMissingZeroes exp))], Some(Sin(Param(inferMissingZeroes exp)))
-                    | Variable(_) | Number(_) | Operation(_) | Unparsed(_) | Operator(_) | Sin(_)-> [current], Some current
-                | Some(Variable(_)) | Some(Number(_)) | Some(Operator(_)) 
-                | Some(Operation(_)) | Some(Unparsed(_)) | Some(Group(_)) | Some(Sqrt(_))
-                | Some(Sin(_)) -> [current], Some current) None
-
+                    | _ -> [current >=> inferMissingZeroes], Some(current >=> inferMissingZeroes)
+                | Some(_) -> [current], Some current) None
 
 let rec transformToOperations expressions=
     let r = 
         expressions |> List.fold(fun state item -> 
             match item with
-            | Number(_) | Variable(_) | Group(_) | Sqrt(_) | Sin(_) | Operator(_) | Unparsed(_) ->
+            | Number(_) | Variable(_) | Group(_) | Sqrt(_) | Sin(_) | Operator(_) | Unparsed(_) | Cos(_) | Tan(_) ->
                 match state with
                 | (None, None, None) -> (Some (item >=> transformToOperations), None, None)
                 | (Some left,None, None) -> ((Some left,Some item,None))
@@ -181,20 +166,17 @@ let rec transformToOperations expressions=
     | Some a, None, None -> [a]
     | _ -> []
 
-let rec rewriteWithPrecedence op =
+let rec rewriteWithPrecedence op=
+    let op = op |> List.head
     let operationPrecedence = function | Plus | Minus -> 0 | Multiply | Divide -> 1 | Power -> 2
     let isMoreImportantThan a b = operationPrecedence a > operationPrecedence b
 
     match op with 
     | Operation (left, op1, right) -> 
-        match left |> rewriteWithPrecedence with 
-        | Operation(l2, op2, r2) when op2 |> isMoreImportantThan op1 -> Operation (l2, op2, (Operation(r2, op1, right)))
-        | x -> Operation(x, op1, right)
-    | Group(inner) -> Group([(rewriteWithPrecedence (inner |> List.head))])
-    | Sqrt(Param(inner)) -> Sqrt(Param([rewriteWithPrecedence (inner |> List.head)]))
-    | Sin(Param(inner)) -> Sin(Param([rewriteWithPrecedence (inner |> List.head)]))
-    | Number(_) | Variable(_) | Operator(_) 
-    | Sqrt(_) | Sin(_) | Unparsed(_) -> op
+        match [left] |> rewriteWithPrecedence |> List.head with 
+        | Operation(l2, op2, r2) when op2 |> isMoreImportantThan op1 -> [Operation (l2, op2, (Operation(r2, op1, right)))]
+        | x -> [Operation(x, op1, right)]
+    | _ -> [op >=> rewriteWithPrecedence]
 
 let inferOperations expressions= 
-    expressions |> transformToOperations |> List.head |> rewriteWithPrecedence
+    expressions |> transformToOperations |> rewriteWithPrecedence

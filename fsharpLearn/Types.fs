@@ -23,6 +23,8 @@ type Expression =
     | Operator of OpType
     | Sqrt of Param
     | Sin of Param
+    | Cos of Param
+    | Tan of Param
     | Operation of Expression * OpType * Expression
     | Group of Expression list
     | Unparsed of Token
